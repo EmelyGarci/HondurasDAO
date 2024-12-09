@@ -1,0 +1,81 @@
+solidity
+Copy code
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract HondurasDAOGovernance {
+    IERC20 public governanceToken;
+    address public admin;
+    uint256 public proposalCount = 0;
+
+    struct Proposal {
+        uint256 id;
+        string description;
+        uint256 votesFor;
+        uint256 votesAgainst;
+        uint256 endTime;
+        bool executed;
+    }
+
+    mapping(uint256 => Proposal) public proposals;
+    mapping(address => mapping(uint256 => bool)) public votes;
+
+    event ProposalCreated(uint256 id, string description);
+    event Voted(address indexed voter, uint256 proposalId, bool vote);
+    event ProposalExecuted(uint256 proposalId);
+
+    constructor(address _governanceToken) {
+        governanceToken = IERC20(_governanceToken);
+        admin = msg.sender;
+    }
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can perform this action");
+        _;
+    }
+
+    function createProposal(string memory description, uint256 duration) public onlyAdmin {
+        proposalCount++;
+        proposals[proposalCount] = Proposal({
+            id: proposalCount,
+            description: description,
+            votesFor: 0,
+            votesAgainst: 0,
+            endTime: block.timestamp + duration,
+            executed: false
+        });
+
+        emit ProposalCreated(proposalCount, description);
+    }
+
+    function vote(uint256 proposalId, bool support) public {
+        Proposal storage proposal = proposals[proposalId];
+        require(block.timestamp < proposal.endTime, "Voting period has ended");
+        require(!votes[msg.sender][proposalId], "You have already voted");
+
+        uint256 votingPower = governanceToken.balanceOf(msg.sender);
+        require(votingPower > 0, "You must own tokens to vote");
+
+        if (support) {
+            proposal.votesFor += votingPower;
+        } else {
+            proposal.votesAgainst += votingPower;
+        }
+
+        votes[msg.sender][proposalId] = true;
+        emit Voted(msg.sender, proposalId, support);
+    }
+
+    function executeProposal(uint256 proposalId) public {
+        Proposal storage proposal = proposals[proposalId];
+        require(block.timestamp > proposal.endTime, "Voting period has not ended");
+        require(!proposal.executed, "Proposal already executed");
+
+        if (proposal.votesFor > proposal.votesAgainst) {
+            proposal.executed = true;
+            emit ProposalExecuted(proposalId);
+        }
+    }
+}
